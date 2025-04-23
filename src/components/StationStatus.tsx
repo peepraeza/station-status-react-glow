@@ -19,16 +19,20 @@ interface StationStatusProps {
 Amplify.configure({
   "API": {
     "Events": {
-      "endpoint": "https://gncntr4p5bg53gsk3yuihpxvum.appsync-api.ap-southeast-1.amazonaws.com/event",
-      "region": "ap-southeast-1",
-      "defaultAuthMode": "apiKey",
-      "apiKey": "da2-jnfiv2bubzdflluspmixnck5ya"
+      endpoint: import.meta.env.VITE_API_ENDPOINT,
+      region: import.meta.env.VITE_API_REGION,
+      defaultAuthMode: 'apiKey',
+      apiKey: import.meta.env.VITE_API_KEY,
     }
   }
 });
 
 const StationStatus: React.FC<StationStatusProps> = ({ stationId, name, initialStatus = 'INACTIVE' }) => {
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>(initialStatus);
+
+  useEffect(() => {
+    setStatus(initialStatus);
+  }, [initialStatus]);
 
   return (
     <div className="flex items-center space-x-3 p-3 rounded-lg border border-gray-100">
@@ -64,16 +68,25 @@ export const StationManager: React.FC = () => {
   // Function to handle status updates
   const handleStatusUpdate = (data: any) => {
     console.log('received', data);
+  
+    let payload: StationData | undefined;
+  
     try {
-      // Parse the data if it's a string
-      const parsedData: StationData = typeof data === 'string' 
-        ? JSON.parse(data) 
-        : data;
-      
-      if (parsedData.stationId && parsedData.status) {
-        setStationStatuses(prev => ({
+      if (data?.event?.stationId) {
+        // จาก real-time backend
+        payload = data.event;
+      } else if (data?.stationId) {
+        // จาก simulateStatusUpdate
+        payload = data;
+      } else if (typeof data === 'string') {
+        const parsed = JSON.parse(data);
+        payload = parsed.event ?? parsed;
+      }
+  
+      if (payload?.stationId && payload?.status) {
+        setStationStatuses((prev) => ({
           ...prev,
-          [parsedData.stationId]: parsedData.status as 'ACTIVE' | 'INACTIVE'
+          [payload!.stationId]: payload!.status as 'ACTIVE' | 'INACTIVE',
         }));
       }
     } catch (error) {
@@ -95,7 +108,12 @@ export const StationManager: React.FC = () => {
         console.log('Connected to stations status channel');
         
         channel.subscribe({
-          next: handleStatusUpdate,
+          next: (data) => {
+            console.log('received raw', data);
+            if (data?.event) {
+              handleStatusUpdate(data.event);
+            }
+          },
           error: (err) => console.error('error', err),
         });
       } catch (error) {
